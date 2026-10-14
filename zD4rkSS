@@ -1,0 +1,58 @@
+
+# Registro de actividad de programas - Windows 11
+# Uso visible y autorizado
+# Guarda el historial en el Escritorio.
+
+$log = Join-Path ([Environment]::GetFolderPath("Desktop")) "HistorialPC.csv"
+$usuario = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+
+function Guardar-Evento($evento, $nombre, $pid, $fecha) {
+    [PSCustomObject]@{
+        FechaHora = $fecha
+        Usuario   = $usuario
+        Evento    = $evento
+        Programa  = $nombre
+        PID       = $pid
+    } | Export-Csv -Path $log -Append -NoTypeInformation -Encoding UTF8
+}
+
+# No confundir los programas que ya estaban abiertos
+# con los que se abran después de iniciar el registro.
+$vistos = @{}
+
+Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+    $vistos[[string]$_.Id] = $_.ProcessName
+}
+
+Write-Host "Registro de programas iniciado."
+Write-Host "Usuario: $usuario"
+Write-Host "Historial: $log"
+Write-Host "Pulsa Ctrl+C para detener."
+Write-Host ""
+
+while ($true) {
+    $ahora = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $actuales = @{}
+
+    Get-Process -ErrorAction SilentlyContinue | ForEach-Object {
+        $id = [string]$_.Id
+        $actuales[$id] = $_.ProcessName
+
+        if (-not $vistos.ContainsKey($id)) {
+            $vistos[$id] = $_.ProcessName
+            Guardar-Evento "ABIERTO" $_.ProcessName $id $ahora
+            Write-Host "$ahora ABIERTO $($_.ProcessName)"
+        }
+    }
+
+    foreach ($id in @($vistos.Keys)) {
+        if (-not $actuales.ContainsKey($id)) {
+            $nombre = $vistos[$id]
+            Guardar-Evento "CERRADO" $nombre $id $ahora
+            Write-Host "$ahora CERRADO $nombre"
+            $vistos.Remove($id)
+        }
+    }
+
+    Start-Sleep -Seconds 1
+}
